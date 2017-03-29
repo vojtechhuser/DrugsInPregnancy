@@ -1,5 +1,5 @@
 ---
-title: "STEP FERD A SQL plus R"
+title: "STEP A - SQL plus R"
 output: html_document
 ---
 
@@ -14,7 +14,7 @@ source('c:/d/JTfunctions.R')
 
 sessionInfo()
 start=Sys.time()
-#--ferdinand
+
 cdmDatabaseSchema='ccae_v5'
 #cdmDatabaseSchema='mdcd_v5'
 
@@ -22,7 +22,6 @@ cdmDatabaseSchema='ccae_v5'
 #doing THIS DB
 cdmDatabaseSchema
 
-#cdmDatabaseSchema='mdcd_cdm4'
 
 
 workDatabaseSchema='nih'
@@ -31,16 +30,11 @@ workDatabaseSchema='nih'
 conn <- connect(connectionDetails)
 
 
-sql<-readr::read_file(file = 'c:/d/ferd1.sql');cat(sql)
-#sql<-readr::read_file(file = 'c:/d/ferd1era2.sql');cat(sql)
+sql<-readr::read_file(file = 'cohort-sql.sql');cat(sql)
 sql <- SqlRender::renderSql(sql,work_database_schema = workDatabaseSchema,cdm_database_schema=cdmDatabaseSchema)$sql
-#sql <- SqlRender::translateSql(sql, targetDialect = connectionDetails$dbms)$sql
 cat(sql)
 result <- DatabaseConnector::executeSql(conn, sql,profile = F)
 
-
-#sql='select * from nih.fout1 limit 10'
-#select a.*,c.concept_code,c.vocabulary_id from nih.fout1 a join ccae_v5.concept c on a.drug_concept_id= c.concept_id limit 10;
 
 
 #loop at topX drugs (clinical drug)
@@ -48,14 +42,11 @@ sql='select a.drug_concept_id, count(*) as inst_cnt
 ,c.concept_code,c.vocabulary_id,substring(c.concept_name,1,70)
  from nih.fout1 a join ccae_v5.concept c on a.drug_concept_id= c.concept_id
 group by drug_concept_id,3,4,c.concept_name order by 2 desc;'
-#r.ccae<-r
-#sql='select * from nih.fcohort1 limit 10'
+
+
 r <- DatabaseConnector::querySql(conn, sql)
 r$dataset=cdmDatabaseSchema
-#head(r,50)
-#View(r)
 write_csv(r,path = paste0(cdmDatabaseSchema,'ferdA-01-distinct-drugs.csv'))
-#write.csv(r,'clipboard',row.names = F)
 
 sql='select c.vocabulary_id, count(*) as cnt
 from nih.fout1 a join ccae_v5.concept c on a.drug_concept_id= c.concept_id
@@ -63,33 +54,26 @@ group by 1 order by 2 desc;'
 #r.ccae<-r
 #sql='select * from nih.fcohort1 limit 10'
 drugType <- DatabaseConnector::querySql(conn, sql)
-drugType
 
 #cohort size
 
 sql='select count(*) from nih.fcohort2'
 cnt <- DatabaseConnector::querySql(conn, sql)
 cnt
-#5.284M
 
 sql='select count(distinct person_id) from nih.fcohort2'
 cntPts <- DatabaseConnector::querySql(conn, sql)
 cntPts
-#3.9 ccae
 
 sql='select preg_cnt, count(*) as cnt from (select person_id, count(*) as preg_cnt from nih.fcohort2 group by 1) group by 1 order by 1'
 pregcntStats <- DatabaseConnector::querySql(conn, sql)
 pregcntStats
-
-#TODO drill deeper by date
-#
 
 
 
 sql='select count(*) as cnt from (select  distinct person_id,procedure_date from nih.fcohort2)'
 cntPtsPreg <- DatabaseConnector::querySql(conn, sql)
 cntPtsPreg
-#4.5M ccae
 
 sql='select count(*) from nih.fcohort'
 cnt <- DatabaseConnector::querySql(conn, sql)
@@ -101,33 +85,12 @@ sql='select count(distinct person_id) from nih.fout1'
 cnt <- DatabaseConnector::querySql(conn, sql)
 cnt
 
-#which procedures get us patients
+#which procedures get us what cohort size 
 sql='select procedure_concept_id, count(*) as cnt from nih.fcohort group by 1 order by 2 desc'
 codes <- DatabaseConnector::querySql(conn, sql)
 codes
 
-# 
-# names(counts) <- SqlRender::snakeCaseToCamelCase(names(counts))
-# counts <- addCohortNames(counts, "cohortDefinitionId")
-# write.csv(counts, file.path(outputFolder, "CohortCounts.csv"))
-# writeLines("Cohort counts:")
-# print(counts)
 
-#terminology
-# sql="select concept_id,concept_code, vocabulary_id,substring(concept_name,1,50) from ccae_v5.concept where vocabulary_id in ('CPT4','RxNorm');"
-# 
-# terms <- DatabaseConnector::querySql(conn, sql)
-# write_csv(terms,path = 'terms.csv')
-# write.csv(r,'clipboard',row.names = F)
-
-
-#data sample
-#sql='select * from nih.fout1 limit 1000'
-#r <- DatabaseConnector::querySql(conn, sql)
-#r$dataset=cdmDatabaseSchema
-#head(r)
-#write_csv(r,path = paste0(cdmDatabaseSchema,'-01-head_of_1dot4-data.csv'))
-#write.csv(r,'clipboard',row.names = F)
 
 writeLines('DONE with step A')
 print('done, total time was:')
