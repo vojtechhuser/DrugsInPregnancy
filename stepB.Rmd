@@ -1,0 +1,775 @@
+---
+title: "STEP  B "
+output: 
+  html_document: 
+    toc: yes
+---
+
+
+```{r ,echo=FALSE}
+
+library(plyr);library(dplyr);library(magrittr);library(tidyr);library(stringr);library(readr)
+library(pander);panderOptions('table.split.table', Inf);options(knitr.table.format = 'pandoc');panderOptions("table.alignment.default", "left")
+
+
+
+library(Achilles)
+
+source('c:/d/z_connect.R')
+
+source('c:/d/JTfunctions.R')
+```
+
+#analysis starts here
+```{r, one}
+
+#sessionInfo()
+
+
+cdmDatabaseSchema='ccae_v5'
+cdmDatabaseSchema='mdcd_v5'
+
+start=Sys.time()
+
+#doing THIS Db
+cdmDatabaseSchema
+
+workDatabaseSchema='nih'
+
+#skip
+conn <- connect(connectionDetails)
+
+
+#fout2 table
+
+sql<-'drop table nih.fout2;'
+temp<- DatabaseConnector::executeSql(conn, sql)
+
+
+sql<-"
+create table nih.fout2 as
+select 
+CASE 
+	WHEN  rel_time < -273 THEN 0
+	WHEN  rel_time BETWEEN -273 AND -184 THEN 1
+	WHEN  rel_time BETWEEN -183 AND   -94 THEN 2
+	WHEN  rel_time BETWEEN -93 AND   0 THEN 3
+	END AS preg_period,
+
+CASE 
+	WHEN  rel_time BETWEEN -273 AND 0 THEN 1
+else 0
+	END AS during_preg,
+
+datepart(y,procedure_date)-year_of_birth as age,
+
+CASE
+	WHEN (datepart(y,procedure_date)-year_of_birth) <= 19 THEN '12-19'
+	WHEN (datepart(y,procedure_date)-year_of_birth) BETWEEN 20 AND 24 THEN '20-24'
+	WHEN (datepart(y,procedure_date)-year_of_birth) BETWEEN 25 AND 29 THEN '25-29'
+	WHEN (datepart(y,procedure_date)-year_of_birth) BETWEEN 30 AND 34 THEN '30-34'
+	WHEN (datepart(y,procedure_date)-year_of_birth) >= 35 THEN '35-55'
+	END AS age_group
+,t.* from nih.fout1 t
+where drug_concept_id <> 0
+;
+"
+temp<- DatabaseConnector::executeSql(conn, sql)
+
+
+
+
+
+sql="
+
+drop table nih.min3;
+create table nih.min3 as
+   (select c.concept_id, c.concept_name,l0.* from nih.min l0 join ccae_v5.concept c on l0.imeds_drug_ori_id=c.concept_code 
+   where vocabulary_id = 'RxNorm') ;
+
+drop table nih.pt2;
+create table nih.pt2 as
+   (select c.concept_id, c.concept_name,l0.* from nih.pt l0 join ccae_v5.concept c on l0.imeds_drug_ori_id=c.concept_code 
+   where vocabulary_id = 'RxNorm') ;
+
+
+drop table nih.pt3;
+create table nih.pt3 as 
+select distinct concept_id, rxn_product_id, rxn_product_label, trimester ,severity_score_max,evidence_score_max from nih.pt2;
+ 
+
+
+drop table nih.min4;
+create table nih.min4
+as select * from (
+select concept_id, concept_name, rxn_min_id as rxn_id ,rxn_min_label as rlabel from nih.min3 where rxn_min_id is not null
+UNION
+select concept_id, concept_name, rxn_briggs_id as rxn_id ,rxn_briggs_label as rlabel from nih.min3 where rxn_min_id is null
+);
+
+
+drop table nih.classes3;
+create table nih.classes3 as
+   select distinct concept_id,concept_name,imeds_drug_ori_id, severity_score_max, evidence_score_max, fda_cat_score_max 
+   from 
+   (select c.concept_id, c.concept_name,l0.* from nih.classes l0 join ccae_v5.concept c on l0.imeds_drug_ori_id=c.concept_code 
+   where vocabulary_id = 'RxNorm') tt;
+
+drop table nih.fout2pt;
+create table nih.fout2pt as
+(
+	select o.*,l.* from nih.fout2 o 
+	join (select c.concept_id,l0.* from nih.pt l0 join ccae_v5.concept c on l0.imeds_drug_ori_id=c.concept_code where vocabulary_id = 'RxNorm') l 
+	on o.drug_concept_id =l.concept_id and o.preg_period = l.trimester 
+	where 1=1
+);
+
+
+drop table nih.fout2pt0;
+create table nih.fout2pt0 as
+(
+	select o.*,l.* from nih.fout2 o 
+	join (select * from nih.pt3 UNION select concept_id,rxn_product_id, rxn_product_label, 0 as trimester, severity_score_max, evidence_score_max from nih.pt3) l
+	 on o.drug_concept_id =l.concept_id and o.preg_period = l.trimester 
+);
+
+
+drop table nih.fout2classes;
+create table nih.fout2classes as
+select o.*,l.* from nih.fout2 o 
+join (select c.concept_id, substring(c.concept_name,1,70) as concept_name_short,l0.* from nih.classes l0 join ccae_v5.concept c on l0.imeds_drug_ori_id=c.concept_code where vocabulary_id = 'RxNorm') l on o.drug_concept_id =l.concept_id
+where 1=1;
+
+drop table nih.fout2classesi;
+create table nih.fout2classesi as
+select o.*,l.* from nih.fout2 o 
+join (select c.concept_id, substring(c.concept_name,1,70) as concept_name_short,l0.* from nih.classesi l0 join ccae_v5.concept c on l0.imeds_drug_ori_id=c.concept_code where vocabulary_id = 'RxNorm') l on o.drug_concept_id =l.concept_id
+where 1=1;
+
+drop table nih.fout2classes3;
+create table nih.fout2classes3 as
+select o.*,l.* from nih.fout2 o 
+join nih.classes3 l on o.drug_concept_id =l.concept_id
+where 1=1;
+
+
+
+drop table nih.fout2min;
+create table nih.fout2min as
+select o.*,l.* from nih.fout2 o 
+join (select c.concept_id, substring(c.concept_name,1,70) as concept_name_short,l0.* from nih.min l0 join ccae_v5.concept c on l0.imeds_drug_ori_id=c.concept_code where vocabulary_id = 'RxNorm') l on o.drug_concept_id =l.concept_id
+where 1=1;
+
+drop table nih.fout2min4;
+create table nih.fout2min4 as
+select o.*,l.* from nih.fout2 o 
+join nih.min4 l on o.drug_concept_id =l.concept_id;
+
+"
+temp<- DatabaseConnector::executeSql(conn, sql)
+
+
+
+```
+#tasks Z
+```{r, two: z tasks}
+#tasks **************
+
+#task Z8-count preg with drug by rounded first relative time event
+sql="with tmp as 
+(select preg_id,min(rel_time), (min(rel_time)-mod(min(rel_time),10)) as rel2 from nih.fout2 group by 1)
+select rel2,count(*) from tmp group by 1 order by 1;
+"
+
+z8<- DatabaseConnector::querySql(conn, sql)
+pander(z8)
+write_csv(z8,path = paste0(cdmDatabaseSchema,'-Z8-count-preg-rel-rounded-time.csv'))
+
+
+#--task Z6-preg_women
+sql='select count(*) from (select distinct person_id from nih.fcohort2) a;'
+z6<- DatabaseConnector::querySql(conn, sql)
+z6
+
+#--task Z7-preg_women_with_drug exclude pre preg
+sql='select count(*) from (select distinct person_id from nih.fout2 where during_preg=1) a;'
+z7<- DatabaseConnector::querySql(conn, sql)
+z7
+
+#--task Z7b-preg_women_with_drug include pre preg
+sql='select count(*) from (select distinct person_id from nih.fout2 ) a;'
+z7b<- DatabaseConnector::querySql(conn, sql)
+z7b
+
+#--task Z7clas-preg_women_with_drug exclude pre preg (restricting drugs)
+sql='select count(*) from (select distinct person_id from nih.fout2classes where during_preg=1) a;'
+z7class<- DatabaseConnector::querySql(conn, sql)
+z7class
+
+#--task Z7bclas-preg_women_with_drug include pre preg (restricting drugs)
+sql='select count(*) from (select distinct person_id from nih.fout2classes ) a;'
+z7bclass<- DatabaseConnector::querySql(conn, sql)
+z7bclass
+
+
+#--task Z9-preg_cnt
+sql="select count(*) from (select distinct preg_id from nih.fcohort2) a;"
+z9<- DatabaseConnector::querySql(conn, sql)
+z9
+
+#--task z11
+sql="select count(*) from (select distinct preg_id  from nih.fout2 where during_preg=1) a;"
+z11<- DatabaseConnector::querySql(conn, sql)
+z11
+
+
+#--task z11class
+sql="select count(*) from (select distinct preg_id  from nih.fout2classes where during_preg=1) a;"
+z11class<- DatabaseConnector::querySql(conn, sql)
+z11class
+
+#z10 min and max delivery date
+sql="select min(procedure_date),max(procedure_date) from nih.fcohort2 ;"
+z10<- DatabaseConnector::querySql(conn, sql)
+z10
+
+
+#task Z3_age fixed
+sql='
+with tmp as
+(select distinct preg_id,preg_age from nih.fcohort2)
+select preg_age, count(*) as cnt from tmp group by 1 order by 2;
+'
+z_age<- DatabaseConnector::querySql(conn, sql)
+pander(z_age)
+write_csv(z_age,path = paste0(cdmDatabaseSchema,'-Z3-age_.csv'))
+
+#z5-preg_ratio (only on preg with a drug)
+sql="
+select preg_cnt, count(*) as cnt from (
+select person_id, count(*) as preg_cnt from (
+select distinct person_id,  preg_id from nih.fout2)
+group by 1
+)
+group by 1
+order by 1;"
+
+z5<- DatabaseConnector::querySql(conn, sql)
+pander(z5)
+write_csv(z5,path = paste0(cdmDatabaseSchema,'-Z5-preg_ratio-with-drug.csv'))
+
+
+#z5b-preg_ratio (any preg)
+sql="
+select preg_cnt, count(*) as cnt from (
+select person_id, count(*) as preg_cnt from (
+select distinct person_id,  preg_id from nih.fcohort2)
+group by 1
+)
+group by 1
+order by 1;
+"
+
+z5b<- DatabaseConnector::querySql(conn, sql)
+pander(z5b)
+write_csv(z5b,path = paste0(cdmDatabaseSchema,'-Z5b-preg_ratio-any-preg.csv'))
+
+
+#--task z4
+sql="select preg_period,count(*) from nih.fout2 group by 1;"
+z4<- DatabaseConnector::querySql(conn, sql)
+pander(z4)
+write_csv(z4,path = paste0(cdmDatabaseSchema,'-Z4-presc_cnt.csv'))
+
+#--task z4class
+sql="select preg_period,count(*) from nih.fout2classes group by 1;"
+z4class<- DatabaseConnector::querySql(conn, sql)
+pander(z4class)
+write_csv(z4class,path = paste0(cdmDatabaseSchema,'-Z4class-presc_cnt.csv'))
+
+
+#task fout2_B
+sql="
+with temp as (
+select  age_group,preg_period,drug_concept_id, count(*) pregnancy_cnt, sum(in_preg_row_cnt) as prescription_row_cnt from
+	(select preg_id, age_group,preg_period,drug_concept_id,  count(*) as in_preg_row_cnt from nih.fout2 group by 1,2,3,4) a
+group by 1,2,3)
+select a.*,c.concept_name,c.vocabulary_id, c.concept_code from temp a join ccae_v5.concept c on a.drug_concept_id = c.concept_id
+order by 1,2,3,4 desc;
+
+"
+
+b<- DatabaseConnector::querySql(conn, sql)
+b$dataset=cdmDatabaseSchema
+#export data
+saveRDS(b,file = paste0(cdmDatabaseSchema,'fout2-B.rds'))
+
+
+
+
+
+#count of pregnancies
+
+sql='select count(distinct preg_id) from nih.fout2'
+pregCnt<- DatabaseConnector::querySql(conn, sql)
+pregCnt
+
+
+
+#what the data looks like (by count of distinct drug_concept_id)
+byAge <- b %>% group_by(AGE_GROUP,PREG_PERIOD) %>% tally()
+pander(byAge)
+
+
+
+
+
+
+#read class file
+# fname='c:/d/loadLkup/res-v5-imeds_briggs_lookup_table-classes.rds'
+# classes<-readRDS(file = fname)
+# table(classes$status)
+
+#bad row
+# classes %>% filter(imeds_drug_ori_id == 1000126)
+#all bad rows
+# classes %>% group_by(imeds_drug_ori_id) %>% tally() %>% ungroup() %>% arrange(desc(n))
+#extend class file with CMD Vocab codes
+#classes$imeds_drug_ori_id
+
+```
+
+#next task divisor
+
+```{r}
+
+
+
+
+#task C
+sql="select severity_score_max, count(*) count_of_preg, sum(in_severity_cnt) presc_count from
+(select preg_id,severity_score_max, count(*) in_severity_cnt  from nih.fout2classes where preg_period <> 0 group by preg_id, severity_score_max order by 1,2) a
+group by 1 order by 1
+;
+"
+
+c<- DatabaseConnector::querySql(conn, sql)
+pander(c)
+write_csv(c,path = paste0(cdmDatabaseSchema,'-C.csv'))
+
+
+
+
+#task C2
+sql="
+with tmp as 
+(select preg_id, preg_period, severity_score_max, count(*) as in_preg_trim_sev_cnt from nih.fout2pt group by preg_id,2,3)
+select preg_period,severity_score_max, count(*) preg_trim_cnt, sum(in_preg_trim_sev_cnt) instance_cnt from tmp
+group by 1,2
+order by 1,2;
+"
+
+c2<- DatabaseConnector::querySql(conn, sql)
+pander(c2)
+write_csv(c2,path = paste0(cdmDatabaseSchema,'-C2.csv'))
+
+```
+#task C4
+```{r, c4}
+#task C4 (inlucding trim 0)
+sql="with tmp as (select preg_id,preg_period,rxn_id,rlabel, count(*) as cnt1 from nih.fout2min4 group by 1,2,3,4)
+select preg_period,rxn_id,rlabel,count(*) preg_trim_cnt, sum(cnt1) as ins_cnt from tmp
+group by 1,2,3
+having count(*) >=1
+ order by 1,4 desc;
+"
+c4<- DatabaseConnector::querySql(conn, sql)
+write_csv(c4,path = paste0(cdmDatabaseSchema,'-C4ingredLevel.csv'))
+
+
+
+
+
+#taks C4b whole pregnancy level
+#join on class table for trimester 1 to 3 only , no group by trimester
+sql="with tmp as (select preg_id,rxn_id,rlabel, count(*) as cnt1 from nih.fout2min4 where preg_period between 1 and 3 group by 1,2,3)
+select rxn_id,rlabel,count(*) preg_cnt, sum(cnt1) as ins_cnt from tmp
+group by 1,2
+having count(*) >= 1
+order by 1,3 desc;
+"
+c4b<- DatabaseConnector::querySql(conn, sql)
+#pander(c2)
+write_csv(c4b,path = paste0(cdmDatabaseSchema,'-C4bWholePreg.csv'))
+
+
+
+
+
+
+```
+
+#task divisor
+
+```{r}
+#D
+sql="with tmp as (
+select preg_id,evidence_score_max, count(*) as cnt1 from nih.fout2classes3 where severity_score_max between 4 and 7 group by 1,2
+)
+select evidence_score_max,count(*) as preg_cnt,sum(cnt1) as ins_cnt from tmp
+group by 1
+order by 1;"
+d<- DatabaseConnector::querySql(conn, sql)
+pander(d)
+write_csv(d,path = paste0(cdmDatabaseSchema,'-D-evidence.csv'))
+
+
+#D2 on trimester level
+sql="with tmp as 
+(select preg_id, preg_period, evidence_score_max, count(*) as in_preg_trim_sev_cnt from nih.fout2pt0 where severity_score_max between 4 and 7 group by preg_id,2,3)
+select preg_period,evidence_score_max, count(*) preg_trim_cnt, sum(in_preg_trim_sev_cnt) ins_cnt from tmp
+group by 1,2
+order by 1,2;"
+d2<- DatabaseConnector::querySql(conn, sql)
+pander(d2)
+write_csv(d2,path = paste0(cdmDatabaseSchema,'-D2-evidence-trimester.csv'))
+
+
+# #ingredient level
+# #Di
+# sql="with tmp as (
+# select preg_id,evidence_score_max, count(*) as cnt1 from nih.fout2classesi where severity_score_max between 4 and 7 group by 1,2
+# )
+# select evidence_score_max,count(*) as preg_cnt,sum(cnt1) as ins_cnt from tmp
+# group by 1
+# order by 1;"
+# di<- DatabaseConnector::querySql(conn, sql)
+# pander(di)
+# write_csv(di,path = paste0(cdmDatabaseSchema,'-Di-evidence.csv'))
+# 
+# 
+# #D2i on trimester level
+# sql="with tmp as 
+# (select preg_id, preg_period, evidence_score_max, count(*) as in_preg_trim_sev_cnt from nih.fout2pti where severity_score_max between 4 and 7 group by preg_id,2,3)
+# select preg_period,evidence_score_max, count(*) preg_trim_cnt, sum(in_preg_trim_sev_cnt) ins_cnt from tmp
+# group by 1,2
+# order by 1,2;"
+# d2i<- DatabaseConnector::querySql(conn, sql)
+# pander(d2i)
+# write_csv(d2i,path = paste0(cdmDatabaseSchema,'-D2i-evidence-trimester.csv'))
+
+
+
+```
+#task F
+```{r, taskF}
+
+
+#task F
+sql="with fout2bgroup as (select * from nih.fout2 a join nih.bgroup g on a.drug_concept_id = g.concept_id ),
+ tmp as
+(select preg_id,preg_period,class,count(*) as cnt1 from fout2bgroup group by 1,2,3
+)
+select preg_period,class,count(*) as preg_cnt, sum(cnt1) as inst_cnt from tmp
+group by 1,2
+order by 1,3 desc;"
+f<- DatabaseConnector::querySql(conn, sql)
+pander(f)
+write_csv(f,path = paste0(cdmDatabaseSchema,'-F-byTrimTopClassesVcols.csv'))
+
+
+#taskF2 whole preg
+sql="with fout2bgroup as (select * from nih.fout2 a join nih.bgroup g on a.drug_concept_id = g.concept_id ),
+ tmp as
+(select preg_id,class,count(*) as cnt1 from fout2bgroup where preg_period between 1 and 3 group by 1,2
+)
+select class,count(*) as preg_cnt, sum(cnt1) as inst_cnt from tmp
+group by 1
+order by 2 desc;"
+f2<- DatabaseConnector::querySql(conn, sql)
+#pander(f2)
+write_csv(f2,path = paste0(cdmDatabaseSchema,'-F2-wholePregTopClassesVcols.csv'))
+
+
+#taskFb
+sql="
+with fout2classesbgroup as( 
+select * from nih.fout2classes a join nih.bgroup g on a.drug_concept_id = g.concept_id ),
+ tmp as
+(select preg_id,preg_period,class,rxn_briggs_id,rxn_briggs_label,count(*) as cnt1 from fout2classesbgroup group by 1,2,3,4,5
+)
+select preg_period,class,rxn_briggs_id,rxn_briggs_label,count(*) as preg_cnt, sum(cnt1) as inst_cnt from tmp
+group by 1,2,3,4
+order by 1,2,5 desc;"
+fb<- DatabaseConnector::querySql(conn, sql)
+write_csv(fb,path = paste0(cdmDatabaseSchema,'-Fb-byTrimTopXinClass.csv'))
+
+
+#taskF2b
+sql="with fout2classesbgroup as( 
+select * from nih.fout2classes a join nih.bgroup g on a.drug_concept_id = g.concept_id ),
+ tmp as
+(select preg_id,class,rxn_briggs_id,rxn_briggs_label,count(*) as cnt1 from fout2classesbgroup where preg_period between 1 and 3 group by 1,2,3,4
+)
+select class,rxn_briggs_id,rxn_briggs_label,count(*) as preg_cnt, sum(cnt1) as inst_cnt from tmp
+group by 1,2,3
+order by 1,4 desc;"
+
+f2b<- DatabaseConnector::querySql(conn, sql)
+write_csv(f2b,path = paste0(cdmDatabaseSchema,'-F2b-wholePregTopXinClass.csv'))
+
+```
+#task divisor task J and E
+
+
+```{r, J tasks}
+#task J
+
+sql="
+with tmp as (select preg_id,age_group,during_preg,rxn_id,rlabel,count(*) as cnt1 from nih.fout2min4 group by 1,2,3,4,5)
+select during_preg,age_group,rxn_id,rlabel,count(*) as preg_cnt,sum(cnt1) as ins_cnt from tmp
+group by 1,2,3,4
+order by 1 desc,2,5 desc;"
+
+
+j<- DatabaseConnector::querySql(conn, sql)
+write_csv(j,path = paste0(cdmDatabaseSchema,'-JbyAgeGrpTopIngred.csv'))
+
+
+#task Eclass
+sql="with tmp as(
+select preg_id,during_preg,fda_cat_score_max,count(*) as cnt1 from nih.fout2classes3  group by 1,2,3 )
+select during_preg,fda_cat_score_max,count(*) as preg_cnt, sum(cnt1) ins_cnt from tmp
+group by 1 ,2 order by 1 desc,2;
+"
+eclass<- DatabaseConnector::querySql(conn, sql)
+write_csv(eclass,path = paste0(cdmDatabaseSchema,'Eclass-FDA.csv'))
+
+#task Etrim
+sql="with tmp as(
+select preg_id,preg_period,fda_cat_score_max,count(*) as cnt1 from nih.fout2classes3  group by 1,2,3 )
+select preg_period,fda_cat_score_max,count(*) as preg_cnt, sum(cnt1) inst_cnt from tmp
+group by 1 ,2 order by 1,2;
+"
+etrim<- DatabaseConnector::querySql(conn, sql)
+write_csv(etrim,path = paste0(cdmDatabaseSchema,'Etrim-FDA.csv'))
+
+
+
+#task EclassI
+sql="with tmp as(
+select preg_id,during_preg,fda_cat_score_max,count(*) as cnt1 from nih.fout2classesi  group by 1,2,3 )
+select during_preg,fda_cat_score_max,count(*) as preg_cnt, sum(cnt1) ins_cnt from tmp
+group by 1 ,2 order by 1 desc,2;
+"
+eclassi<- DatabaseConnector::querySql(conn, sql)
+write_csv(eclassi,path = paste0(cdmDatabaseSchema,'EclassI-FDA.csv'))
+
+#task EtrimI
+sql="with tmp as(
+select preg_id,preg_period,fda_cat_score_max,count(*) as cnt1 from nih.fout2classesi  group by 1,2,3 )
+select preg_period,fda_cat_score_max,count(*) as preg_cnt, sum(cnt1) ins_cnt from tmp
+group by 1 ,2 order by 1,2;
+"
+etrimi<- DatabaseConnector::querySql(conn, sql)
+write_csv(etrimi,path = paste0(cdmDatabaseSchema,'EtrimI-FDA.csv'))
+
+
+
+```
+#task divisor tasks G
+```{r, Gtasks}
+
+
+
+
+#data for table 5a (on product level)
+#in product augmentin is counted once
+
+#Gclass
+sql="with tmp as(
+select preg_id,severity_score_max,during_preg,count(*) as cnt1 from nih.fout2classes3 group by 1,2,3 )
+select during_preg,severity_score_max, count(*) as preg_cnt, sum(cnt1) as ins_cnt from tmp
+group by 1,2
+order by 1 desc, 2 desc,3 desc;"
+gclass<- DatabaseConnector::querySql(conn, sql)
+write_csv(gclass,path = paste0(cdmDatabaseSchema,'Gclass-bySevWholePreg.csv'))
+
+
+#Gtrim
+sql="
+with tmp as(
+select preg_id,severity_score_max,preg_period,count(*) as cnt1 from nih.fout2pt0 group by 1,2,3 )
+select preg_period,severity_score_max, count(*) as preg_cnt, sum(cnt1) as ins_cnt from tmp
+group by 1,2
+order by 1 , 2 desc,3 desc;
+"
+gtrim<- DatabaseConnector::querySql(conn, sql)
+write_csv(gtrim,path = paste0(cdmDatabaseSchema,'-Gtrim-byTrimSeverity.csv'))
+
+```
+##table B
+```{r, table 5b}
+#table 5B
+#solve the problem on ingredient level augmentin is counted twice
+#Gclassi
+sql="with tmp as(
+select preg_id,severity_score_max,during_preg,count(*) as cnt1 from nih.fout2classesi group by 1,2,3 )
+select during_preg,severity_score_max, count(*) as preg_cnt, sum(cnt1) as ins_cnt from tmp
+group by 1,2
+order by 1 desc, 2 desc,3 desc;"
+gclassi<- DatabaseConnector::querySql(conn, sql)
+write_csv(gclassi,path = paste0(cdmDatabaseSchema,'GclassI-bySevWholePreg.csv'))
+
+
+
+#Gtrimi (trim0 has same values as trim1 (hence it must be pti))
+sql="with pt0 as
+(select * from(
+	select * from nih.pti
+	   UNION  select imeds_drug_ori_id,status,rxn_ingredient_id,rxn_ingredient_label, 0 as trimester,rxn_briggs_id,rxn_briggs_label,severity_score_max,evidence_score_max  from nih.pti where trimester=1
+	)
+),
+fout2pt0 as
+(
+	select o.*,l.* from nih.fout2 o 
+	join (select c.concept_id,l0.* from pt0 l0 join ccae_v5.concept c on l0.imeds_drug_ori_id=c.concept_code where vocabulary_id = 'RxNorm') l 
+	on o.drug_concept_id =l.concept_id and o.preg_period = l.trimester 
+	where 1=1
+),
+ tmp as(
+select preg_id,severity_score_max,preg_period,count(*) as cnt1 from fout2pt0 group by 1,2,3 )
+select preg_period,severity_score_max, count(*) as preg_cnt, sum(cnt1) as ins_cnt from tmp
+group by 1,2
+order by 1 , 2 desc,3 desc;
+"
+
+ gtrimi<- DatabaseConnector::querySql(conn, sql)
+ write_csv(gtrimi,path = paste0(cdmDatabaseSchema,'-GtrimI-byTrimSeverity.csv'))
+
+```
+#table 8
+```{r, for table 8}
+
+#FOR TABLE 8b
+
+#G2class
+sql="with tmp as(
+select preg_id,severity_score_max,during_preg,rxn_briggs_id,rxn_briggs_label,count(*) as cnt1 from nih.fout2classesi group by 1,2,3,4,5 )
+select during_preg,severity_score_max,rxn_briggs_id,rxn_briggs_label, count(*) as preg_cnt, sum(cnt1) as ins_cnt from tmp
+group by 1,2,3,4
+order by 1 desc, 2 desc,5 desc;
+"
+g2class<- DatabaseConnector::querySql(conn, sql)
+write_csv(g2class,path = paste0(cdmDatabaseSchema,'-G2Class-topIngredBySeverityWholePreg.csv'))
+
+
+
+#G2trim
+sql="with pt0 as
+(select * from(
+	select * from nih.pti
+	   UNION  select imeds_drug_ori_id,status,rxn_ingredient_id,rxn_ingredient_label, 0 as trimester,rxn_briggs_id,rxn_briggs_label,severity_score_max,evidence_score_max  from nih.pti where trimester=1
+	)
+),
+fout2pt0 as
+(
+	select o.*,l.* from nih.fout2 o 
+	join (select c.concept_id,l0.* from pt0 l0 join ccae_v5.concept c on l0.imeds_drug_ori_id=c.concept_code where vocabulary_id = 'RxNorm') l 
+	on o.drug_concept_id =l.concept_id and o.preg_period = l.trimester 
+	where 1=1
+),
+ tmp as(
+    select preg_id,severity_score_max,preg_period,rxn_briggs_id,rxn_briggs_label,count(*) as cnt1 from fout2pt0 group by 1,2,3,4,5 )
+select preg_period,severity_score_max,rxn_briggs_id,rxn_briggs_label, count(*) as preg_cnt, sum(cnt1) as ins_cnt from tmp
+group by 1,2,3,4
+order by 1 , 2 desc,5 desc;"
+
+ g2trim<- DatabaseConnector::querySql(conn, sql)
+ write_csv(g2trim,path = paste0(cdmDatabaseSchema,'-G2Trim-topIngredBySeverity.csv'))
+
+```
+#task K
+```{r,task K}
+
+
+#--taskK1 sevFDA
+sql="
+with tmp as (select preg_id,fda_cat_score_max,severity_score_max,count(*) as cnt1 from nih.fout2classes3 group by 1,2,3)
+select fda_cat_score_max,severity_score_max,count(*) as preg_cnt, sum(cnt1) as ins_cnt from tmp
+group by 1,2 order by 1,2;"
+
+
+k1<- DatabaseConnector::querySql(conn, sql)
+write_csv(k1,path = paste0(cdmDatabaseSchema,'-K1-sevFda.csv'))
+
+
+#--taskK2 evidFDA
+sql="
+with tmp as (select preg_id,fda_cat_score_max,evidence_score_max,count(*) as cnt1 from nih.fout2classes3 group by 1,2,3)
+select fda_cat_score_max,evidence_score_max,count(*) as preg_cnt, sum(cnt1) as ins_cnt from tmp
+group by 1,2 order by 1,2;"
+
+k2<- DatabaseConnector::querySql(conn, sql)
+write_csv(k2,path = paste0(cdmDatabaseSchema,'-K2-evidFDA.csv'))
+
+#--taskK3 sevEvi
+sql="with tmp as (select preg_id,severity_score_max,evidence_score_max,count(*) as cnt1 from nih.fout2classes3 group by 1,2,3)
+select severity_score_max,evidence_score_max,count(*) as preg_cnt, sum(cnt1) as ins_cnt from tmp
+group by 1,2 order by 1,2;"
+
+k3<- DatabaseConnector::querySql(conn, sql)
+write_csv(k3,path = paste0(cdmDatabaseSchema,'-K3-sevEvi.csv'))
+
+
+
+
+
+#--taskK1i sevFDA
+sql="
+with tmp as (select preg_id,fda_cat_score_max,severity_score_max,count(*) as cnt1 from nih.fout2classesi group by 1,2,3)
+select fda_cat_score_max,severity_score_max,count(*) as preg_cnt, sum(cnt1) as inst_cnt from tmp
+group by 1,2 order by 1,2;"
+
+
+k1i<- DatabaseConnector::querySql(conn, sql)
+write_csv(k1i,path = paste0(cdmDatabaseSchema,'-K1i-sevFda.csv'))
+
+
+#lkups
+sql="select * from nih.min4"
+min4<- DatabaseConnector::querySql(conn, sql)
+write_csv(min4,path = paste0(cdmDatabaseSchema,'-Y-min4.csv'))
+
+sql="select * from nih.classes3"
+clas3<- DatabaseConnector::querySql(conn, sql)
+write_csv(clas3,path = paste0(cdmDatabaseSchema,'-Y-classes3.csv'))
+
+sql="select * from nih.pt3"
+pt3<- DatabaseConnector::querySql(conn, sql)
+write_csv(pt3,path = paste0(cdmDatabaseSchema,'-Y-pt3-trimesterTable.csv'))
+
+
+# #--taskK2 evidFDA
+# sql="
+# with tmp as (select preg_id,fda_cat_score_max,evidence_score_max,count(*) as cnt1 from nih.fout2classesi group by 1,2,3)
+# select fda_cat_score_max,evidence_score_max,count(*) as preg_cnt, sum(cnt1) as inst_cnt from tmp
+# group by 1,2 order by 1,2;"
+# 
+# k2i<- DatabaseConnector::querySql(conn, sql)
+# write_csv(k2i,path = paste0(cdmDatabaseSchema,'-K2i-evidFDA.csv'))
+
+# #--taskK3 sevEvi
+# sql="with tmp as (select preg_id,severity_score_max,evidence_score_max,count(*) as cnt1 from nih.fout2classesi group by 1,2,3)
+# select severity_score_max,evidence_score_max,count(*) as preg_cnt, sum(cnt1) as inst_cnt from tmp
+# group by 1,2 order by 1,2;"
+# 
+# k3i<- DatabaseConnector::querySql(conn, sql)
+# write_csv(k3i,path = paste0(cdmDatabaseSchema,'-K3i-sevEvi.csv'))
+# 
+
+
+dummy <- dbDisconnect(conn)
+
+
+```
